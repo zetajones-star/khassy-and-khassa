@@ -2,71 +2,120 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Web Lore Commit Panel</title>
+  <title>Lore Web - Admin & Pembaca</title>
   <style>
-    body { background: #000; color: #fff; font-family: sans-serif; padding: 2rem; }
-    input, textarea { width: 100%; padding: 0.5rem; margin: 0.5rem 0; border-radius: 4px; border: none; background: #111; color: #fff; }
-    button { padding: 0.5rem 1rem; background: #444; border: none; color: #fff; cursor: pointer; border-radius: 4px; }
+    body { font-family: sans-serif; background: #111; color: #eee; padding: 1rem; }
+    .hidden { display: none; }
+    .card { border: 1px solid #444; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #222; }
+    input, textarea { width: 100%; margin-bottom: 1rem; padding: 0.5rem; background: #000; color: #eee; border: 1px solid #555; border-radius: 4px; }
+    button { padding: 0.5rem 1rem; background: #444; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
     button:hover { background: #666; }
-    .card { background: #111; padding: 1rem; border: 1px solid #333; border-radius: 6px; margin-bottom: 1rem; }
+    h2 { color: #66f; }
   </style>
 </head>
-<body>  <h2>📘 Tambah Chapter Baru</h2>
-  <input type="text" id="chapter-title" placeholder="Judul Chapter">
-  <textarea id="chapter-content" rows="6" placeholder="Isi chapter..."></textarea>
-  <input type="password" id="token-input" placeholder="Masukkan GitHub Token">
-  <button onclick="publishChapter()">Publish ke GitHub</button>  <div id="status"></div>  <script>
-    const username = "USERNAME_KAMU"; // GANTI DENGAN USERNAME GITHUB KAMU
-    const repo = "REPO_KAMU";         // GANTI DENGAN NAMA REPO KAMU (misalnya 'Zeta-Jones')
-    const filePath = "chapters.json"; // File JSON yang jadi tempat simpan chapter
+<body>
+  <div id="admin-section" class="hidden">
+    <h2>Admin Panel</h2>
+    <input type="text" id="title" placeholder="Judul Chapter">
+    <textarea id="content" placeholder="Isi cerita..."></textarea>
+    <input type="password" id="token" placeholder="GitHub Token">
+    <button onclick="publish()">Publish ke GitHub</button>
+    <p id="status"></p>
+  </div>  <div id="reader-section">
+    <h2>📖 Pembaca - Daftar Chapter</h2>
+    <div id="chapters"></div>
+    <hr>
+    <button onclick="showAdmin()">Masuk Admin</button>
+  </div>  <script>
+    const username = "zetajones-star";
+    const repo = "khassy-and-khassa";
+    const filePath = "chapters.json";
+    const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/${filePath}`;
+    let sha = "";
 
-    async function publishChapter() {
-      const token = document.getElementById("token-input").value; // <--- TOKEN DISIMPAN DI SINI (GANTI DI BROWSER SAJA)
-      const title = document.getElementById("chapter-title").value.trim();
-      const content = document.getElementById("chapter-content").value.trim();
-      if (!title || !content || !token) return alert("Semua kolom harus diisi.");
+    async function fetchChapters() {
+      try {
+        const res = await fetch(`https://raw.githubusercontent.com/${username}/${repo}/main/${filePath}`);
+        const data = await res.json();
+        renderChapters(data);
+      } catch (e) {
+        document.getElementById('chapters').innerHTML = '<p>Belum ada data.</p>';
+      }
+    }
 
-      const statusEl = document.getElementById("status");
-      statusEl.textContent = "Mengambil file lama...";
+    function renderChapters(data) {
+      const container = document.getElementById('chapters');
+      container.innerHTML = '';
+      data.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = `<h3>${c.title}</h3><p>${c.content.replace(/\n/g, '<br>')}</p>`;
+        container.appendChild(div);
+      });
+    }
 
-      const apiUrl = `https://api.github.com/repos/${username}/${repo}/contents/${filePath}`;
+    async function publish() {
+      const title = document.getElementById('title').value.trim();
+      const content = document.getElementById('content').value.trim();
+      const token = document.getElementById('token').value.trim();
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = "Menyimpan...";
+
+      if (!title || !content || !token) return alert("Semua field harus diisi.");
 
       let oldContent = [];
-      let sha = null;
       try {
-        const res = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(apiUrl, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json"
+          }
+        });
         const json = await res.json();
         sha = json.sha;
         const fileContent = atob(json.content.replace(/\n/g, ""));
         oldContent = JSON.parse(fileContent);
       } catch (e) {
         statusEl.textContent = "Gagal ambil file lama. Gunakan array kosong.";
-        oldContent = [];
       }
 
       oldContent.push({ title, content });
 
-      const updatedContent = btoa(JSON.stringify(oldContent, null, 2));
+      const encoded = btoa(JSON.stringify(oldContent, null, 2));
 
-      const res = await fetch(apiUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          message: `Tambah chapter: ${title}`,
-          content: updatedContent,
-          sha: sha || undefined,
-        })
-      });
-
-      if (res.ok) {
-        statusEl.textContent = "✅ Chapter berhasil dipublish.";
-      } else {
-        const err = await res.json();
-        statusEl.textContent = `❌ Gagal publish: ${err.message}`;
+      try {
+        const updateRes = await fetch(apiUrl, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            message: `Tambah chapter: ${title}`,
+            content: encoded,
+            sha
+          })
+        });
+        if (updateRes.ok) {
+          statusEl.textContent = "✅ Berhasil dipublish!";
+          fetchChapters();
+        } else {
+          statusEl.textContent = "❌ Gagal publish.";
+        }
+      } catch (e) {
+        statusEl.textContent = "❌ Error saat upload.";
       }
     }
+
+    function showAdmin() {
+      const pw = prompt("Masukkan password admin:");
+      if (pw === "Zeta-Jones") {
+        document.getElementById('admin-section').classList.remove('hidden');
+        document.getElementById('reader-section').classList.add('hidden');
+      }
+    }
+
+    fetchChapters();
   </script></body>
 </html>
